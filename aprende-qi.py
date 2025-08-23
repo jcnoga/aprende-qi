@@ -1,17 +1,10 @@
 # =====================================================================================
 # HACK: Corrige o problema do SQLite no Streamlit Cloud
-# Esta parte do código força o Python a usar a biblioteca pysqlite3 em vez da do sistema.
 __import__('pysqlite3')
 import sys
 sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 # =====================================================================================
 
-# Agora, o resto das suas importações podem começar
-import streamlit as st
-import os
-import requests
-from bs4 import BeautifulSoup
-# ... e assim por diante
 import streamlit as st
 import os
 import requests
@@ -20,36 +13,53 @@ from PyPDF2 import PdfReader
 from docx import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
-# A linha abaixo foi corrigida para usar a nova biblioteca e remover o aviso de desatualização.
-from langchain_community.embeddings import SentenceTransformerEmbeddings # <-- ALTERADO
-from transformers import pipeline
+from langchain_community.embeddings import SentenceTransformerEmbeddings
+# --- ALTERAÇÕES AQUI ---
+from langchain.chains import RetrievalQA
+from langchain_community.llms import HuggingFaceHub # Usaremos um modelo generativo do Hub
 
 # --- CONFIGURAÇÃO INICIAL ---
 
-# Define o diretório para persistência do banco de dados vetorial
 DB_DIR = "chroma_db_persistent"
 
-# Carrega o modelo de embedding uma única vez para otimização
-# Este modelo converte texto em vetores numéricos
 @st.cache_resource
 def load_embedding_model():
     """Carrega o modelo de embedding SentenceTransformer."""
     return SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
 
-# Carrega o pipeline de perguntas e respostas uma única vez
+# --- FUNÇÃO DE QA MODIFICADA ---
+# Substituímos o pipeline antigo por uma cadeia de QA generativa do LangChain
 @st.cache_resource
-def load_qa_pipeline():
-    """Carrega o pipeline de QA da Hugging Face."""
-    return pipeline("question-answering", model="deepset/roberta-base-squad2", tokenizer="deepset/roberta-base-squad2")
+def load_qa_chain(retriever):
+    """Carrega a cadeia de QA generativa usando um modelo da Hugging Face."""
+    # Usaremos o FLAN-T5, um excelente modelo do Google para seguir instruções.
+    # Ele é gratuito para usar através da API da Hugging Face.
+    llm = HuggingFaceHub(
+        repo_id="google/flan-t5-base", 
+        model_kwargs={"temperature": 0.1, "max_length": 512}
+    )
+    
+    # A cadeia RetrievalQA conecta o buscador de documentos (retriever) com o modelo de linguagem (llm)
+    qa_chain = RetrievalQA.from_chain_type(
+        llm=llm,
+        chain_type="stuff", # "stuff" significa que ele vai "enfiar" todo o contexto no prompt
+        retriever=retriever,
+        return_source_documents=True # Isso nos permite ver o contexto usado
+    )
+    return qa_chain
 
 embedding_model = load_embedding_model()
-qa_pipeline = load_qa_pipeline()
 
-# --- FUNÇÕES DE PROCESSAMENTO DE DADOS ---
+# --- FUNÇÕES DE PROCESSAMENTO DE DADOS (sem alterações) ---
 
 def parse_txt(file):
-    """Extrai texto de um arquivo .txt."""
-    return file.getvalue().decode("utf-8")
+    """Extrai texto de um arquivo .txt de forma robusta."""
+    text_bytes = file.getvalue()
+    try:
+        return text_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        st.warning(f"O arquivo '{file.name}' não estava em UTF-8. Tentando ler com codificação alternativa (latin-1).")
+        return text_bytes.decode("latin-1", errors='ignore')
 
 def parse_pdf(file):
     """Extrai texto de um arquivo .pdf."""
@@ -68,55 +78,41 @@ def parse_url(url):
     """Extrai texto de uma URL."""
     try:
         response = requests.get(url, timeout=10)
-        response.raise_for_status()  # Verifica se a requisição foi bem-sucedida
+        response.raise_for_status()
         soup = BeautifulSoup(response.content, "html.parser")
-        # Remove tags de script e style para limpar o texto
         for script_or_style in soup(["script", "style"]):
             script_or_style.decompose()
         text = ' '.join(t.strip() for t in soup.stripped_strings)
         return text
     except requests.RequestException as e:
-        st.warning(f"Não foi possível acessar a URL: {url}. Erro: {e}")
+        st.warning(f"Não foi possível acessar la URL: {url}. Erro: {e}")
         return None
 
 def process_and_store_documents(files, urls):
-    """
-    Processa arquivos e URLs, extrai o texto, divide em chunks e armazena no ChromaDB.
-    Esta função implementa o aprendizado incremental.
-    """
+    """Processa e armazena documentos no ChromaDB."""
     if not files and not urls:
         st.warning("Por favor, adicione arquivos ou URLs para iniciar o aprendizado.")
         return
 
     with st.spinner("Processando fontes e atualizando a base de conhecimento..."):
         all_texts = []
-        
-        # Processa arquivos
         for file in files:
             file_ext = os.path.splitext(file.name)[1].lower()
-            if file_ext == ".txt":
-                all_texts.append(parse_txt(file))
-            elif file_ext == ".pdf":
-                all_texts.append(parse_pdf(file))
-            elif file_ext == ".docx":
-                all_texts.append(parse_docx(file))
-        
-        # Processa URLs
+            if file_ext == ".txt": all_texts.append(parse_txt(file))
+            elif file_ext == ".pdf": all_texts.append(parse_pdf(file))
+            elif file_ext == ".docx": all_texts.append(parse_docx(file))
         for url in urls:
             if url:
                 text = parse_url(url)
-                if text:
-                    all_texts.append(text)
+                if text: all_texts.append(text)
         
         if not all_texts:
             st.error("Nenhum texto pôde ser extraído das fontes fornecidas.")
             return
 
-        # Divide os textos em pedaços (chunks) menores para melhor processamento
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         documents = text_splitter.create_documents(all_texts)
         
-        # Cria ou carrega o banco de dados vetorial com persistência
         vector_db = Chroma.from_documents(
             documents=documents,
             embedding=embedding_model,
@@ -126,35 +122,33 @@ def process_and_store_documents(files, urls):
 
     st.success(f"{len(documents)} trechos de texto foram adicionados à base de conhecimento com sucesso!")
 
-# --- FUNÇÃO DE PERGUNTAS E RESPOSTAS ---
+# --- FUNÇÃO DE PERGUNTAS E RESPOSTAS MODIFICADA ---
 
 def answer_question(query):
-    """
-    Recebe uma pergunta, busca o contexto relevante no ChromaDB e retorna a resposta.
-    """
+    """Busca o contexto no ChromaDB e usa a cadeia generativa para responder."""
     if not os.path.exists(DB_DIR):
         st.error("A base de conhecimento está vazia. Por favor, adicione arquivos ou URLs primeiro.")
         return None, None
 
     with st.spinner("Buscando a resposta na base de conhecimento..."):
-        # Carrega o banco de dados persistente
         vector_db = Chroma(persist_directory=DB_DIR, embedding_function=embedding_model)
-
-        # Busca por documentos similares à pergunta (busca de contexto)
-        # O 'k=5' busca os 5 chunks mais relevantes
-        relevant_docs = vector_db.similarity_search(query, k=10)
         
-        if not relevant_docs:
-            return "Não encontrei informações relevantes sobre isso na minha base de conhecimento.", None
+        # O retriever é a parte do ChromaDB que busca os documentos relevantes
+        retriever = vector_db.as_retriever(search_kwargs={"k": 5})
+        
+        # Carregamos nossa cadeia de QA, passando o retriever para ela
+        qa_chain = load_qa_chain(retriever)
+        
+        # Invocamos a cadeia com a pergunta
+        result = qa_chain.invoke(query)
+        
+        answer = result['result']
+        context_docs = result['source_documents']
+        context = "\n\n".join([doc.page_content for doc in context_docs])
+        
+        return answer, context
 
-        # Concatena o conteúdo dos documentos relevantes para formar o contexto
-        context = "\n\n".join([doc.page_content for doc in relevant_docs])
-
-        # Usa o pipeline de QA para encontrar a resposta dentro do contexto
-        result = qa_pipeline(question=query, context=context)
-        return result['answer'], context
-
-# --- INTERFACE GRÁFICA (STREAMLIT) ---
+# --- INTERFACE GRÁFICA (sem alterações) ---
 
 def main():
     st.set_page_config(page_title="QA com Aprendizado Contínuo", layout="wide")
@@ -165,7 +159,6 @@ def main():
         Depois, você pode fazer perguntas em linguagem natural e o sistema responderá com base no que aprendeu.
     """)
 
-    # --- TELA DE ENTRADA PARA APRENDIZADO (na barra lateral) ---
     with st.sidebar:
         st.header("📚 Tela de Aprendizado")
         st.markdown("Adicione aqui novas fontes de informação para o sistema.")
@@ -187,7 +180,6 @@ def main():
         if st.button("🧠 Processar e Aprender"):
             process_and_store_documents(uploaded_files, urls)
 
-    # --- TELA DE ENTRADA PARA PERGUNTAS (área principal) ---
     st.header("❓ Tela de Perguntas")
     st.markdown("Faça uma pergunta com base no conteúdo que o sistema aprendeu.")
 
