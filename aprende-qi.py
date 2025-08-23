@@ -14,9 +14,8 @@ from docx import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
 from langchain_community.embeddings import SentenceTransformerEmbeddings
-# --- ALTERAÇÕES AQUI ---
 from langchain.chains import RetrievalQA
-from langchain_community.llms import HuggingFaceHub # Usaremos um modelo generativo do Hub
+from langchain_community.llms import HuggingFaceHub
 
 # --- CONFIGURAÇÃO INICIAL ---
 
@@ -27,28 +26,20 @@ def load_embedding_model():
     """Carrega o modelo de embedding SentenceTransformer."""
     return SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
 
-# --- FUNÇÃO DE QA MODIFICADA ---
-# Substituímos o pipeline antigo por uma cadeia de QA generativa do LangChain
+# --- MUDANÇA #1: NOVA FUNÇÃO APENAS PARA O MODELO DE LINGUAGEM ---
+# Esta função é cacheável porque não recebe argumentos complexos.
 @st.cache_resource
-def load_qa_chain(retriever):
-    """Carrega a cadeia de QA generativa usando um modelo da Hugging Face."""
+def load_llm():
+    """Carrega o modelo de linguagem generativo da Hugging Face."""
     # Usaremos o FLAN-T5, um excelente modelo do Google para seguir instruções.
-    # Ele é gratuito para usar através da API da Hugging Face.
     llm = HuggingFaceHub(
         repo_id="google/flan-t5-base", 
         model_kwargs={"temperature": 0.1, "max_length": 512}
     )
-    
-    # A cadeia RetrievalQA conecta o buscador de documentos (retriever) com o modelo de linguagem (llm)
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff", # "stuff" significa que ele vai "enfiar" todo o contexto no prompt
-        retriever=retriever,
-        return_source_documents=True # Isso nos permite ver o contexto usado
-    )
-    return qa_chain
+    return llm
 
 embedding_model = load_embedding_model()
+llm = load_llm() # Carregamos o modelo uma vez aqui
 
 # --- FUNÇÕES DE PROCESSAMENTO DE DADOS (sem alterações) ---
 
@@ -122,7 +113,7 @@ def process_and_store_documents(files, urls):
 
     st.success(f"{len(documents)} trechos de texto foram adicionados à base de conhecimento com sucesso!")
 
-# --- FUNÇÃO DE PERGUNTAS E RESPOSTAS MODIFICADA ---
+# --- MUDANÇA #2: FUNÇÃO DE PERGUNTAS E RESPOSTAS MODIFICADA ---
 
 def answer_question(query):
     """Busca o contexto no ChromaDB e usa a cadeia generativa para responder."""
@@ -133,11 +124,16 @@ def answer_question(query):
     with st.spinner("Buscando a resposta na base de conhecimento..."):
         vector_db = Chroma(persist_directory=DB_DIR, embedding_function=embedding_model)
         
-        # O retriever é a parte do ChromaDB que busca os documentos relevantes
+        # O retriever é a parte que busca os documentos relevantes
         retriever = vector_db.as_retriever(search_kwargs={"k": 5})
         
-        # Carregamos nossa cadeia de QA, passando o retriever para ela
-        qa_chain = load_qa_chain(retriever)
+        # A cadeia de QA é criada aqui, usando o LLM que já foi carregado e cacheado
+        qa_chain = RetrievalQA.from_chain_type(
+            llm=llm, # Usando o llm carregado globalmente
+            chain_type="stuff",
+            retriever=retriever,
+            return_source_documents=True
+        )
         
         # Invocamos a cadeia com a pergunta
         result = qa_chain.invoke(query)
