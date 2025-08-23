@@ -15,7 +15,8 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
 from langchain_community.embeddings import SentenceTransformerEmbeddings
 from langchain.chains import RetrievalQA
-from langchain_community.llms import HuggingFaceHub
+# --- MUDANÇA NA IMPORTAÇÃO ---
+from langchain_community.llms.huggingface_endpoint import HuggingFaceEndpoint
 
 # --- CONFIGURAÇÃO INICIAL ---
 
@@ -26,26 +27,24 @@ def load_embedding_model():
     """Carrega o modelo de embedding SentenceTransformer."""
     return SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
 
-# --- CORREÇÃO FINAL APLICADA AQUI ---
+# --- MUDANÇA NA FUNÇÃO load_llm ---
 @st.cache_resource
 def load_llm():
-    """Carrega o modelo de linguagem generativo da Hugging Face."""
-    llm = HuggingFaceHub(
-        repo_id="google/flan-t5-base",
-        model_kwargs={
-            "temperature": 0.1,
-            "max_new_tokens": 512 # Usando o nome correto do parâmetro
-        }
+    """Carrega o modelo de linguagem generativo usando HuggingFaceEndpoint."""
+    llm = HuggingFaceEndpoint(
+        repo_id="google/flan-t5-large",
+        temperature=0.1,
+        max_new_tokens=512,
+        huggingfacehub_api_token=st.secrets["HUGGINGFACEHUB_API_TOKEN"] # Lendo o token explicitamente
     )
     return llm
 
 embedding_model = load_embedding_model()
 llm = load_llm() # Carregamos o modelo uma vez aqui
 
-# --- FUNÇÕES DE PROCESSAMENTO DE DADOS (sem alterações) ---
+# --- O RESTO DO CÓDIGO PERMANECE IGUAL ---
 
 def parse_txt(file):
-    """Extrai texto de um arquivo .txt de forma robusta."""
     text_bytes = file.getvalue()
     try:
         return text_bytes.decode("utf-8")
@@ -54,7 +53,6 @@ def parse_txt(file):
         return text_bytes.decode("latin-1", errors='ignore')
 
 def parse_pdf(file):
-    """Extrai texto de um arquivo .pdf."""
     pdf_reader = PdfReader(file)
     text = ""
     for page in pdf_reader.pages:
@@ -62,12 +60,10 @@ def parse_pdf(file):
     return text
 
 def parse_docx(file):
-    """Extrai texto de um arquivo .docx."""
     doc = Document(file)
     return "\n".join([para.text for para in doc.paragraphs])
 
 def parse_url(url):
-    """Extrai texto de uma URL."""
     try:
         response = requests.get(url, timeout=10)
         response.raise_for_status()
@@ -81,7 +77,6 @@ def parse_url(url):
         return None
 
 def process_and_store_documents(files, urls):
-    """Processa e armazena documentos no ChromaDB."""
     if not files and not urls:
         st.warning("Por favor, adicione arquivos ou URLs para iniciar o aprendizado.")
         return
@@ -114,77 +109,58 @@ def process_and_store_documents(files, urls):
 
     st.success(f"{len(documents)} trechos de texto foram adicionados à base de conhecimento com sucesso!")
 
-# --- FUNÇÃO DE PERGUNTAS E RESPOSTAS (sem alterações) ---
-
 def answer_question(query):
-    """Busca o contexto no ChromaDB e usa a cadeia generativa para responder."""
     if not os.path.exists(DB_DIR):
         st.error("A base de conhecimento está vazia. Por favor, adicione arquivos ou URLs primeiro.")
         return None, None
 
     with st.spinner("Buscando a resposta na base de conhecimento..."):
         vector_db = Chroma(persist_directory=DB_DIR, embedding_function=embedding_model)
-        
         retriever = vector_db.as_retriever(search_kwargs={"k": 5})
-        
         qa_chain = RetrievalQA.from_chain_type(
             llm=llm,
             chain_type="stuff",
             retriever=retriever,
             return_source_documents=True
         )
-        
         result = qa_chain.invoke(query)
-        
         answer = result['result']
         context_docs = result['source_documents']
-        context = "\n\n".join([doc.page_content for doc in context_docs])
-        
+        context = "\n".join([doc.page_content for doc in context_docs])
         return answer, context
-
-# --- INTERFACE GRÁFICA (sem alterações) ---
 
 def main():
     st.set_page_config(page_title="QA com Aprendizado Contínuo", layout="wide")
-    
     st.title("🤖 Programa de QA com Aprendizado Persistente e Incremental")
     st.markdown("""
         Esta aplicação permite que você construa uma base de conhecimento a partir de múltiplos arquivos e URLs. 
         Depois, você pode fazer perguntas em linguagem natural e o sistema responderá com base no que aprendeu.
     """)
-
     with st.sidebar:
         st.header("📚 Tela de Aprendizado")
         st.markdown("Adicione aqui novas fontes de informação para o sistema.")
-
         uploaded_files = st.file_uploader(
             "Selecione múltiplos arquivos",
             accept_multiple_files=True,
             type=['txt', 'pdf', 'docx'],
             help="Você pode arrastar e soltar vários arquivos de uma vez."
         )
-
         urls_input = st.text_area(
             "Informe URLs (uma por linha)",
             placeholder="https://site1.com\nhttps://site2.com/artigo",
             height=150
         )
         urls = [url.strip() for url in urls_input.split('\n') if url.strip()]
-
         if st.button("🧠 Processar e Aprender"):
             process_and_store_documents(uploaded_files, urls)
-
     st.header("❓ Tela de Perguntas")
     st.markdown("Faça uma pergunta com base no conteúdo que o sistema aprendeu.")
-
     user_query = st.text_input("Digite sua pergunta aqui:", "")
-
     if st.button("🔍 Obter Resposta"):
         if user_query:
             answer, context = answer_question(user_query)
             if answer:
                 st.success(f"**Resposta:** {answer}")
-                
                 with st.expander("Ver contexto utilizado para a resposta"):
                     st.write(context)
         else:
