@@ -26,15 +26,15 @@ def load_embedding_model():
     """Carrega o modelo de embedding SentenceTransformer."""
     return SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
 
-# --- MUDANÇA #1: NOVA FUNÇÃO APENAS PARA O MODELO DE LINGUAGEM ---
-# Esta função é cacheável porque não recebe argumentos complexos.
+# --- CORREÇÃO APLICADA AQUI ---
 @st.cache_resource
 def load_llm():
     """Carrega o modelo de linguagem generativo da Hugging Face."""
-    # Usaremos o FLAN-T5, um excelente modelo do Google para seguir instruções.
     llm = HuggingFaceHub(
-        repo_id="google/flan-t5-base", 
-        model_kwargs={"temperature": 0.1, "max_length": 512}
+        repo_id="google/flan-t5-base",
+        # Parâmetros passados diretamente, não dentro de um dicionário
+        temperature=0.1,
+        max_length=512
     )
     return llm
 
@@ -113,7 +113,7 @@ def process_and_store_documents(files, urls):
 
     st.success(f"{len(documents)} trechos de texto foram adicionados à base de conhecimento com sucesso!")
 
-# --- MUDANÇA #2: FUNÇÃO DE PERGUNTAS E RESPOSTAS MODIFICADA ---
+# --- FUNÇÃO DE PERGUNTAS E RESPOSTAS (sem alterações) ---
 
 def answer_question(query):
     """Busca o contexto no ChromaDB e usa a cadeia generativa para responder."""
@@ -124,18 +124,15 @@ def answer_question(query):
     with st.spinner("Buscando a resposta na base de conhecimento..."):
         vector_db = Chroma(persist_directory=DB_DIR, embedding_function=embedding_model)
         
-        # O retriever é a parte que busca os documentos relevantes
         retriever = vector_db.as_retriever(search_kwargs={"k": 5})
         
-        # A cadeia de QA é criada aqui, usando o LLM que já foi carregado e cacheado
         qa_chain = RetrievalQA.from_chain_type(
-            llm=llm, # Usando o llm carregado globalmente
+            llm=llm,
             chain_type="stuff",
             retriever=retriever,
             return_source_documents=True
         )
         
-        # Invocamos a cadeia com a pergunta
         result = qa_chain.invoke(query)
         
         answer = result['result']
