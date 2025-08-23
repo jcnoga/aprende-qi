@@ -1,9 +1,17 @@
+# =====================================================================================
 # HACK: Corrige o problema do SQLite no Streamlit Cloud
 # Esta parte do código força o Python a usar a biblioteca pysqlite3 em vez da do sistema.
 __import__('pysqlite3')
 import sys
 sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 # =====================================================================================
+
+# Agora, o resto das suas importações podem começar
+import streamlit as st
+import os
+import requests
+from bs4 import BeautifulSoup
+# ... e assim por diante
 import streamlit as st
 import os
 import requests
@@ -134,7 +142,7 @@ def answer_question(query):
 
         # Busca por documentos similares à pergunta (busca de contexto)
         # O 'k=5' busca os 5 chunks mais relevantes
-        relevant_docs = vector_db.similarity_search(query, k=5)
+        relevant_docs = vector_db.similarity_search(query, k=10)
         
         if not relevant_docs:
             return "Não encontrei informações relevantes sobre isso na minha base de conhecimento.", None
