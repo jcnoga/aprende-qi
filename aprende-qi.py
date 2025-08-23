@@ -1,3 +1,9 @@
+# HACK: Corrige o problema do SQLite no Streamlit Cloud
+# Esta parte do código força o Python a usar a biblioteca pysqlite3 em vez da do sistema.
+__import__('pysqlite3')
+import sys
+sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+# =====================================================================================
 import streamlit as st
 import os
 import requests
