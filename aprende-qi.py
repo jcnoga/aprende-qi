@@ -26,15 +26,16 @@ def load_embedding_model():
     """Carrega o modelo de embedding SentenceTransformer."""
     return SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
 
-# --- CORREÇÃO APLICADA AQUI ---
+# --- CORREÇÃO FINAL APLICADA AQUI ---
 @st.cache_resource
 def load_llm():
     """Carrega o modelo de linguagem generativo da Hugging Face."""
     llm = HuggingFaceHub(
         repo_id="google/flan-t5-base",
-        # Parâmetros passados diretamente, não dentro de um dicionário
-        temperature=0.1,
-        max_length=512
+        model_kwargs={
+            "temperature": 0.1,
+            "max_new_tokens": 512 # Usando o nome correto do parâmetro
+        }
     )
     return llm
 
