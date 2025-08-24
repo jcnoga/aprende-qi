@@ -1,8 +1,8 @@
 # =====================================================================================
 # HACK: Corrige o problema do SQLite no Streamlit Cloud
-import sqlite3
+#import sqlite3
 import sys
-sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+ #sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 # =====================================================================================
 
 import streamlit as st
