@@ -151,7 +151,6 @@
             flex-direction: column;
         }
 
-        /* Novo estilo para o label e ícone de ajuda */
         .label-wrapper {
             display: flex;
             align-items: center;
@@ -162,7 +161,7 @@
         .form-group label {
             font-weight: 600;
             color: var(--cor-texto-claro);
-            margin-bottom: 0; /* Reset margem pois está no wrapper */
+            margin-bottom: 0; 
         }
 
         .btn-help {
@@ -207,12 +206,21 @@
             display: none; /* Oculto por padrão */
         }
 
+        /* Atualizado: Form Actions com espaço entre elementos */
         .form-actions {
             display: flex;
-            justify-content: flex-end;
+            justify-content: space-between; /* Separa Backup do Calcular */
+            align-items: center;
             padding-top: 1rem;
             border-top: 1px solid #eee;
             margin-top: 1.5rem;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .backup-controls {
+            display: flex;
+            gap: 0.5rem;
         }
 
         .btn {
@@ -223,6 +231,10 @@
             font-weight: 600;
             cursor: pointer;
             transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
         }
 
         .btn-primary {
@@ -232,6 +244,18 @@
 
         .btn-primary:hover {
             background-color: #0056b3;
+        }
+        
+        /* Novo estilo para botão secundário */
+        .btn-secondary {
+            background-color: #e9ecef;
+            color: var(--cor-texto);
+            border: 1px solid #ced4da;
+        }
+
+        .btn-secondary:hover {
+            background-color: #dde0e3;
+            border-color: #adb5bd;
         }
 
         /* Seção de Resultados */
@@ -454,7 +478,6 @@
             background: #f9f9ff;
         }
         
-        /* Classe utilitária para esconder seções do modal */
         .hidden {
             display: none !important;
         }
@@ -466,7 +489,7 @@
             }
             
             .form-fields-grid {
-                grid-template-columns: 1fr; /* Coluna única em telas pequenas */
+                grid-template-columns: 1fr; 
             }
 
             .results-header {
@@ -482,6 +505,22 @@
             .results-actions button {
                 flex: 1;
                 margin-left: 0;
+            }
+            
+            .form-actions {
+                flex-direction: column-reverse;
+            }
+            
+            .form-actions button, .backup-controls {
+                width: 100%;
+            }
+            
+            .backup-controls {
+                justify-content: space-between;
+            }
+            
+            .backup-controls button {
+                flex: 1;
             }
         }
     </style>
@@ -626,6 +665,13 @@
                     </details>
                     
                     <div class="form-actions">
+                        <div class="backup-controls">
+                            <!-- Botões de Backup e Restore -->
+                            <button type="button" id="btn-backup" class="btn btn-secondary">⬇ Backup (JSON)</button>
+                            <button type="button" id="btn-restore-trigger" class="btn btn-secondary">📂 Restaurar</button>
+                            <input type="file" id="file-restore" accept=".json" style="display: none;">
+                        </div>
+                        
                         <button type="submit" class="btn btn-primary">Calcular 25 Indicadores 🚀</button>
                     </div>
                 </form>
@@ -662,15 +708,12 @@
                 <button id="modal-close" class="modal-close">&times;</button>
             </div>
             <div id="modal-body" class="modal-body">
-                <!-- Seção de Significado -->
                 <h4 class="modal-section-title" id="label-meaning">Significado</h4>
                 <p id="modal-meaning">O que este indicador representa.</p>
                 
-                <!-- Seção de Fórmula (Pode ser ocultada) -->
                 <h4 class="modal-section-title section-formula" id="label-formula">Fórmula</h4>
                 <div id="modal-formula" class="formula section-formula">(Fórmula de cálculo)</div>
 
-                <!-- Seção de Interpretação (Pode ser ocultada) -->
                 <h4 class="modal-section-title section-interpretation" id="label-interpretation">Interpretação e Recomendação</h4>
                 <p id="modal-interpretation" class="interpretation section-interpretation">Uma análise prática do resultado.</p>
             </div>
@@ -694,8 +737,6 @@
             const modalMeaning = document.getElementById('modal-meaning');
             const modalFormula = document.getElementById('modal-formula');
             const modalInterpretation = document.getElementById('modal-interpretation');
-            
-            // Modal Sections to toggle
             const formulaSections = document.querySelectorAll('.section-formula');
             const interpretationSections = document.querySelectorAll('.section-interpretation');
 
@@ -704,9 +745,14 @@
             const copyClipboardBtn = document.getElementById('btn-copy-clipboard');
             const helpButtons = document.querySelectorAll('.btn-help');
 
-            let calculatedResults = []; // Armazena os resultados para exportação
+            // Backup Elements
+            const btnBackup = document.getElementById('btn-backup');
+            const btnRestoreTrigger = document.getElementById('btn-restore-trigger');
+            const fileRestoreInput = document.getElementById('file-restore');
+
+            let calculatedResults = []; 
             
-            // --- Definições dos Ícones (SVG Inline) ---
+            // --- Definições dos Ícones e Indicadores ---
             const icons = {
                 vendas: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>`,
                 custos: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>`,
@@ -718,7 +764,6 @@
                 endividamento: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="9" x2="20" y2="9"></line><line x1="4" y1="15" x2="20" y2="15"></line><line x1="10" y1="3" x2="8" y2="21"></line><line x1="16" y1="3" x2="14" y2="21"></line></svg>`,
             };
             
-            // --- Definições dos Indicadores ---
             const indicatorDefinitions = [
                 // Vendas
                 {
@@ -1088,6 +1133,62 @@
                 return isValid;
             }
 
+            // --- Funções de Backup e Restore ---
+            function backupData() {
+                if (!validateForm()) {
+                    if (!confirm("Alguns campos estão vazios ou inválidos. Deseja fazer o backup mesmo assim?")) {
+                        return;
+                    }
+                }
+                
+                const inputs = getFormInputs();
+                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(inputs, null, 2));
+                const downloadAnchorNode = document.createElement('a');
+                downloadAnchorNode.setAttribute("href", dataStr);
+                downloadAnchorNode.setAttribute("download", "backup_financeiro.json");
+                document.body.appendChild(downloadAnchorNode); // Necessário para Firefox
+                downloadAnchorNode.click();
+                downloadAnchorNode.remove();
+            }
+
+            function triggerRestore() {
+                fileRestoreInput.value = null; // Reseta para permitir carregar o mesmo arquivo duas vezes
+                fileRestoreInput.click();
+            }
+
+            fileRestoreInput.addEventListener('change', (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const data = JSON.parse(e.target.result);
+                        
+                        // Popula os campos
+                        for (const [key, value] of Object.entries(data)) {
+                            const input = document.getElementById(key);
+                            if (input) {
+                                input.value = value;
+                            }
+                        }
+                        
+                        alert("Dados restaurados com sucesso! Clique em 'Calcular' para ver os resultados.");
+                        validateForm(); // Remove erros visuais se houver
+                        
+                    } catch (err) {
+                        console.error(err);
+                        alert("Erro ao ler o arquivo de backup. Certifique-se de que é um arquivo JSON válido.");
+                    }
+                };
+                reader.readAsText(file);
+            });
+
+            // Event Listeners para Backup
+            btnBackup.addEventListener('click', backupData);
+            btnRestoreTrigger.addEventListener('click', triggerRestore);
+
+
             // --- Funções de Cálculo e Exibição ---
             form.addEventListener('submit', (e) => {
                 e.preventDefault();
@@ -1105,7 +1206,8 @@
                 const fields = ['faturamentoBruto', 'custosVariaveis', 'custosFixos', 'numeroVendas', 'impostos', 'ativosTotais', 'patrimonioLiquido', 'ativosCirculantes', 'passivosCirculantes', 'investimentoInicial'];
                 const inputs = {};
                 fields.forEach(id => {
-                    inputs[id] = parseFloat(document.getElementById(id).value) || 0;
+                    const val = parseFloat(document.getElementById(id).value);
+                    inputs[id] = isNaN(val) ? 0 : val;
                 });
                 return inputs;
             }
@@ -1114,7 +1216,7 @@
                 const results = [];
                 const safeInputs = { ...inputs };
                 
-                // Garante que não haja divisão por zero em denominadores comuns
+                // Garante que não haja divisão por zero
                 if (safeInputs.numeroVendas === 0) safeInputs.numeroVendas = 1;
                 if (safeInputs.faturamentoBruto === 0) safeInputs.faturamentoBruto = 1;
                 if (safeInputs.ativosTotais === 0) safeInputs.ativosTotais = 1;
@@ -1125,14 +1227,12 @@
                 indicatorDefinitions.forEach(def => {
                     let rawValue;
                     try {
-                        // Passa os inputs originais (com zeros) para a função de cálculo
                         rawValue = def.calculate(inputs);
                     } catch (error) {
                         console.error(`Erro ao calcular ${def.name}: ${error}`);
-                        rawValue = 0; // Trata erro de cálculo
+                        rawValue = 0; 
                     }
 
-                    // Verifica por NaN ou Infinity após o cálculo
                     if (isNaN(rawValue) || !isFinite(rawValue)) {
                         rawValue = 0;
                     }
@@ -1220,7 +1320,6 @@
                             </div>
                         `;
                         
-                        // Botão "Ver Análise" (abre modal com tudo)
                         card.querySelector('.btn-details').addEventListener('click', () => {
                             openModal(item, true); // true = show all details
                         });
@@ -1235,7 +1334,6 @@
 
             // --- Funções do Modal ---
             function openModal(data, showFullDetails = false) {
-                // Define conteúdo
                 modalTitle.textContent = data.name || data.dataset.title;
                 modalMeaning.textContent = data.meaning || data.dataset.description;
                 
@@ -1245,12 +1343,10 @@
                     modalInterpretation.textContent = data.interpretation;
                     modalInterpretation.className = `interpretation ${data.sentiment} section-interpretation`;
                     
-                    // Mostra seções extras
                     formulaSections.forEach(el => el.classList.remove('hidden'));
                     interpretationSections.forEach(el => el.classList.remove('hidden'));
                 } else {
                     // Veio do botão de ajuda do Input
-                    // Esconde seções extras
                     formulaSections.forEach(el => el.classList.add('hidden'));
                     interpretationSections.forEach(el => el.classList.add('hidden'));
                 }
@@ -1269,11 +1365,10 @@
                 }
             });
 
-            // Event listeners para os botões de ajuda dos inputs
             helpButtons.forEach(btn => {
                 btn.addEventListener('click', (e) => {
-                    e.preventDefault(); // Previne submissão do form se acidentalmente tratado assim
-                    openModal(btn, false); // false = apenas definição
+                    e.preventDefault();
+                    openModal(btn, false); 
                 });
             });
 
@@ -1290,9 +1385,9 @@
                 calculatedResults.forEach(item => {
                     const row = [
                         `"${item.name}"`,
-                        `"${item.formattedValue.replace('R$ ', '')}"`, // Remove R$ para CSV limpo
+                        `"${item.formattedValue.replace('R$ ', '')}"`, 
                         `"${item.category}"`,
-                        `"${item.description.replace(/"/g, '""')}"` // Trata aspas
+                        `"${item.description.replace(/"/g, '""')}"` 
                     ].join(",");
                     csvContent += row + "\r\n";
                 });
@@ -1328,10 +1423,9 @@
                     text += "\r\n";
                 }
                 
-                // --- Método de Cópia compatível com iFrame ---
                 const textArea = document.createElement("textarea");
                 textArea.value = text;
-                textArea.style.position = "fixed";  // Evita rolagem
+                textArea.style.position = "fixed";
                 textArea.style.top = "-9999px";
                 textArea.style.left = "-9999px";
                 document.body.appendChild(textArea);
@@ -1359,4 +1453,4 @@
         });
     </script>
 </body>
-</html>
+</html>```
